@@ -25,7 +25,6 @@ python main.py \
 -model lenet5 \
 -dataset mnist \
 -sensitivity lobster \
--mask_params
 ```
 
 ## Arguments
