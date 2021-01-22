@@ -54,6 +54,7 @@ class Scheduler(object):
         """
 
         if self.plateau.step(loss, epoch):
+            print("Pruning")
             self.starting_state = deepcopy(self.model.state_dict())
             best_T = self._find_threshold_with_bisection()
             if best_T is not None:

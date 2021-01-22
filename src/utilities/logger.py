@@ -1,3 +1,4 @@
+import csv
 import os
 from copy import deepcopy
 
@@ -9,7 +10,7 @@ from config import LOGS_ROOT
 @torch.no_grad()
 def log_statistics(args, epoch, model, pruning_stat, train_performance, valid_performance, test_performance, lr,
                    top_cr, top_acc, cr_data):
-    print_epoch_stat(epoch, pruning_stat, train_performance, valid_performance, test_performance)
+    print_epoch_stat(args, epoch, pruning_stat, train_performance, valid_performance, test_performance)
     
     if pruning_stat["network_param_ratio"] > top_cr:
         top_cr = pruning_stat["network_param_ratio"]
@@ -36,27 +37,32 @@ def log_statistics(args, epoch, model, pruning_stat, train_performance, valid_pe
     return top_cr, top_acc, cr_data
 
 
-def print_epoch_stat(epoch, pruning_stat, train_performance, valid_performance, test_performance):
-    print("###########" + "#" * len(str(epoch)))
-    print("# EPOCH: {} #".format(epoch))
-    print("###########" + "#" * len(str(epoch)))
-    print("\n")
+def print_epoch_stat(args, epoch, pruning_stat, train_performance, valid_performance, test_performance):
+    csv_file_name = "training_performance.csv"
+    cvs_path = os.path.join(LOGS_ROOT, args.dataset, args.name, csv_file_name)
     
-    print("-- Performance --")
-    print("Train: Top-1 {:.2f}, Top-5 {:.2f}, Loss {:.4f}".format(
-        train_performance[0], train_performance[1], train_performance[2]))
-    print("Validation: Top-1 {:.2f}, Top-5 {:.2f}, Loss {:.4f}".format(
-        valid_performance[0], valid_performance[1], valid_performance[2]))
-    print("Test: Top-1 {:.2f}, Top-5 {:.2f}, Loss {:.4f}".format(
-        test_performance[0], test_performance[1], test_performance[2]))
-    print("\n")
+    vals = [epoch,
+            train_performance[0].item(), train_performance[1].item(), train_performance[2],
+            valid_performance[0].item(), valid_performance[1].item(), valid_performance[2],
+            test_performance[0].item(), test_performance[1].item(), test_performance[2],
+            pruning_stat["network_neuron_non_zero_perc"], pruning_stat["network_neuron_ratio"],
+            pruning_stat["network_param_non_zero_perc"], pruning_stat["network_param_ratio"]]
     
-    print("-- Architecture --")
-    print("Remaining neurons (%): {:.2f}".format(pruning_stat["network_neuron_non_zero_perc"]))
-    print("Neurons CR: {:.2f}".format(pruning_stat["network_neuron_ratio"]))
-    print("Remaining parameters (%): {:.2f}".format(pruning_stat["network_param_non_zero_perc"]))
-    print("Parameters CR: {:.2f}".format(pruning_stat["network_param_ratio"]))
-    print("\n")
+    if not os.path.exists(cvs_path):
+        titles = ["iteration",
+                  "tr_t1", "tr_t5", "tr_lo",
+                  "va_t1", "va_t5", "va_lo",
+                  "te_t1", "te_t5", "te_lo",
+                  "ne_perc", "ne_cr",
+                  "pa_perc", "pa_cr"]
+        with open(cvs_path, mode='a') as runs_file:
+            writer = csv.writer(runs_file, delimiter=';', lineterminator='\n')
+            writer.writerow(titles)
+            writer.writerow(vals)
+    else:
+        with open(cvs_path, mode='a') as runs_file:
+            writer = csv.writer(runs_file, delimiter=';', lineterminator='\n')
+            writer.writerow(vals)
 
 
 def print_data(args, cr_data):

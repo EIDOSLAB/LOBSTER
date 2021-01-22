@@ -1,11 +1,12 @@
 import torch
-from .evaluation import test_model, architecture_stat
-from .pruning import get_mask_par, get_mask_neur
-from .pruning.thresholding import threshold_scheduler
 from torch import nn
+from tqdm import tqdm
 
 from config import LAYERS
 from utilities import get_dataloaders, log_statistics, print_data
+from .evaluation import test_model, architecture_stat
+from .pruning import get_mask_par
+from .pruning.thresholding import threshold_scheduler
 
 
 def train_model_epoch_pruning(args, model, train_loader, valid_loader, test_loader, pytorch_optmizer,
@@ -27,7 +28,8 @@ def train_model_epoch_pruning(args, model, train_loader, valid_loader, test_load
         mask_params = get_masks(args, model)
         
         # Batches
-        for data, target in train_loader:
+        print("")
+        for data, target in tqdm(train_loader, desc="Training epoch {}".format(epoch)):
             model.train()
             data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
             
@@ -44,10 +46,6 @@ def train_model_epoch_pruning(args, model, train_loader, valid_loader, test_load
         # Perform pruning step
         if pruning_step(args, TS, valid_performance, cross_valid, DLC):
             train_loader, valid_loader, test_loader = DLC.get_dataloaders()
-        
-        if args.lr_cycling:
-            epochs_count, current_lr = cycle_lr(epochs_count, args.cycle_up, args.cycle_down,
-                                                current_lr, low_lr, high_lr, pytorch_optmizer)
     
     print_data(args, cr_data)
 
@@ -75,7 +73,8 @@ def train_model_batch_pruning(args, model, train_loader, valid_loader, test_load
     for epoch in range(args.epochs):
         
         # Batches
-        for batch, (data, target) in enumerate(train_loader):
+        print("")
+        for batch, (data, target) in tqdm(enumerate(train_loader), desc="Training epoch {}".format(epoch)):
             ni = batch + len(train_loader) * epoch  # total batches since training start
             
             mask_params = get_masks(args, model)
@@ -99,14 +98,11 @@ def train_model_batch_pruning(args, model, train_loader, valid_loader, test_load
                 
                 # Evaluate model performance for pruning purposes only if this batch is not already a 'test_iter'
                 if ((batch + 1) % test_iter) != 0:
-                    valid_performance = test_model(model, loss_function, valid_loader, device)
+                    valid_performance = test_model(model, loss_function, valid_loader, device,
+                                                   "Evaluating model on validation set")
                 
                 if pruning_step(args, TS, valid_performance, cross_valid, DLC):
                     train_loader, valid_loader, test_loader = DLC.get_dataloaders()
-        
-        if args.lr_cycling:
-            epochs_count, current_lr = cycle_lr(epochs_count, args.cycle_up, args.cycle_down,
-                                                current_lr, low_lr, high_lr, pytorch_optmizer)
     
     print_data(args, cr_data)
 
@@ -146,9 +142,9 @@ def get_and_save_statistics(args, epoch, model, loss_function,
                             top_cr, top_acc, cr_data, device):
     pruning_stat = architecture_stat(model)
     
-    train_performance = test_model(model, loss_function, train_loader, device)
-    valid_performance = test_model(model, loss_function, valid_loader, device)
-    test_performance = test_model(model, loss_function, test_loader, device)
+    train_performance = test_model(model, loss_function, train_loader, device, "Evaluating model on training set")
+    valid_performance = test_model(model, loss_function, valid_loader, device, "Evaluating model on validation set")
+    test_performance = test_model(model, loss_function, test_loader, device, "Evaluating model on test set")
     
     top_cr, top_acc, cr_data = log_statistics(args, epoch, model, pruning_stat, train_performance,
                                               valid_performance,
@@ -160,7 +156,6 @@ def get_and_save_statistics(args, epoch, model, loss_function,
 
 def pruning_step(args, TS, valid_performance, cross_valid, DLC):
     if TS.step(valid_performance[2], args.batch_pruning):
-        print("#", "-" * 10, "pruning step", "-" * 10, "#")
         if cross_valid:
             args.seed += 1
             train_loader, valid_loader, test_loader = get_dataloaders(args)

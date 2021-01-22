@@ -2,12 +2,13 @@ import os
 
 import numpy as np
 import torch
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data import random_split
 from torchvision import datasets
 from torchvision import transforms
 
 
-def get_data_loaders(data_dir, train_batch_size, test_batch_size, valid_size, shuffle, num_workers, pin_memory, random_seed=0):
+def get_data_loaders(data_dir, train_batch_size, test_batch_size, valid_size, shuffle, num_workers, pin_memory,
+                     random_seed=0):
     """
     Build and returns a torch.utils.data.DataLoader for the torchvision.datasets.ImageNet DataSet.
     :param data_dir: Location of the DataSet. Downloading not supported.
@@ -19,8 +20,7 @@ def get_data_loaders(data_dir, train_batch_size, test_batch_size, valid_size, sh
     :param random_seed: Value for generating random numbers.
     :return: (train DataLoader, validation DataLoader, test DataLoader) if $valid_size > 0$, else (train DataLoader, test DataLoader)
     """
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     transform_train = transforms.Compose([
         transforms.RandomResizedCrop(224),
@@ -38,41 +38,32 @@ def get_data_loaders(data_dir, train_batch_size, test_batch_size, valid_size, sh
 
     data_dir = os.path.join(data_dir)
 
-    train_dataset = datasets.ImageNet(
+    parent_dataset = datasets.ImageNet(
         root=data_dir, split="train", transform=transform_train,
     )
 
     if valid_size > 0:
-        valid_dataset = datasets.ImageNet(
-            root=data_dir, split="train", transform=transform_test,
-        )
 
-        num_train = len(train_dataset)
-        indices = list(range(num_train))
-        split = int(np.floor(valid_size * num_train))
-
-        if shuffle:
-            torch.manual_seed(random_seed)
-            np.random.seed(random_seed)
-            np.random.shuffle(indices)
-
-        train_idx, valid_idx = indices[split:], indices[:split]
-        train_sampler = SubsetRandomSampler(train_idx)
-        valid_sampler = SubsetRandomSampler(valid_idx)
+        dataset_lenght = len(parent_dataset)
+        valid_lenght = int(np.floor(valid_size * dataset_lenght))
+        train_lenght = dataset_lenght - valid_lenght
+        train_dataset, valid_datasetset = random_split(parent_dataset,
+                                                       [train_lenght, valid_lenght],
+                                                       generator=torch.Generator().manual_seed(random_seed))
 
         train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=train_batch_size, sampler=train_sampler,
+            train_dataset, batch_size=train_batch_size, shuffle=shuffle,
             num_workers=num_workers, pin_memory=pin_memory,
         )
 
         valid_loader = torch.utils.data.DataLoader(
-            valid_dataset, batch_size=test_batch_size, sampler=valid_sampler,
+            valid_datasetset, batch_size=test_batch_size, shuffle=shuffle,
             num_workers=num_workers, pin_memory=pin_memory,
         )
 
     else:
         train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=train_batch_size, shuffle=shuffle,
+            parent_dataset, batch_size=train_batch_size, shuffle=shuffle,
             num_workers=num_workers, pin_memory=pin_memory,
         )
 

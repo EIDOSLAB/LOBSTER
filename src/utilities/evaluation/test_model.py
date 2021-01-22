@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 
 
 class AverageMeter(object):
@@ -48,7 +49,7 @@ def accuracy(output, target, topk=(1,)):
 
 
 @torch.no_grad()
-def test_model(model, loss_function, dataloader, device):
+def test_model(model, loss_function, dataloader, device, desc=None):
     """
     Evaluates PyTorch model performance.
     :param model: PyTorch model to evaluate.
@@ -64,7 +65,13 @@ def test_model(model, loss_function, dataloader, device):
     model.eval()
 
     if dataloader is not None:
-        for data, target in dataloader:
+        if desc is not None:
+            pbar = tqdm(dataloader, total=len(dataloader))
+            pbar.set_description(desc)
+        else:
+            pbar = dataloader
+
+        for data, target in pbar:
             data = data.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(data)

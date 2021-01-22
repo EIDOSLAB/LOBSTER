@@ -3,16 +3,59 @@ from torch import nn
 
 
 @torch.no_grad()
-def apply_masks(tensor, masks, tensor_key):
+def get_activation(preact_dict, param_name, hook_type):
+    """
+    Hooks used for in sensitivity schedulers (LOBSTE, Neuron-LOBSTER, SERENE).
+    :param preact_dict: Dictionary in which save the parameters information.
+    :param param_name: Name of the layer, used a dictionary key.
+    :param hook_type: Hook type.
+    :return: Returns a forward_hook if $hook_type$ is forward, else a backward_hook.
+    """
+
+    def forward_hook(model, inp, output):
+        preact_dict[param_name] = output
+
+    def backward_hook(module, grad_input, grad_output):
+        preact_dict[param_name] = None
+        preact_dict[param_name] = grad_output[0].detach().cpu()
+
+    return forward_hook if hook_type == "forward" else backward_hook
+
+
+@torch.no_grad()
+def apply_mask_params(mask, tensor, tensor_key):
     """
     Element-wise multiplication between a tensor and the corresponding mask.
+    :param mask: Dictionary containing the tensor mask at the given key.
     :param tensor: Tensor on which apply the mask.
-    :param masks: Dictionary containing the tensor mask at the given key.
     :param tensor_key: Key at which the mask for the tensor is stored in the dictionary.
     """
-    for mask in masks:
-        if mask is not None:
-            tensor.mul_(mask[tensor_key])
+    for m in mask:
+        tensor.mul_(m[tensor_key])
+
+
+@torch.no_grad()
+def apply_mask_neurons(mask, tensor, tensor_key):
+    """
+    Element-wise multiplication between a tensor and the corresponding mask.
+    :param mask: Dictionary containing the tensor mask at the given key.
+    :param tensor: Tensor on which apply the mask.
+    :param tensor_key: Key at which the mask for the tensor is stored in the dictionary.
+    """
+    if len(tensor.shape) == 1:
+        tensor.mul_(mask[tensor_key])
+    elif len(tensor.shape) == 2:
+        tensor.copy_(torch.einsum(
+            'ij,i->ij',
+            tensor,
+            mask[tensor_key]
+        ))
+    elif len(tensor.shape) == 4:
+        tensor.copy_(torch.einsum(
+            'ijnm,i->ijnm',
+            tensor,
+            mask[tensor_key]
+        ))
 
 
 @torch.no_grad()
@@ -54,7 +97,7 @@ def find_module(model, name):
             if found_module and not isinstance(module, nn.Identity):
                 next_module = module
                 break
-    
+
     return current_module, next_module
 
 
@@ -72,23 +115,19 @@ def get_mask_neur(model, layers):
         if isinstance(mo, layers):
             for n_p, p in mo.named_parameters():
                 name = "{}.{}".format(n_m, n_p)
-                if "weight" in name:
-                    mask[name] = torch.zeros_like(p)
-                    if isinstance(mo, nn.modules.Conv2d):
-                        non_zero = torch.abs(p).sum(dim=(1, 2, 3)).nonzero()
-                    elif isinstance(mo, nn.modules.Linear):
-                        non_zero = torch.abs(p).sum(dim=1).nonzero()
-                    elif isinstance(mo, nn.modules.BatchNorm2d):
-                        non_zero = torch.abs(p).sum(dim=0).nonzero()
-                    
-                    for nz in non_zero:
-                        if isinstance(mo, (nn.modules.Conv2d, nn.modules.Linear)):
-                            mask[name][nz, :] = 1.
-                        elif isinstance(mo, nn.modules.BatchNorm2d):
-                            mask[name][nz] = 1.
+
+                if "weight" in n_p:
+                    if isinstance(mo, nn.modules.Linear):
+                        sum = torch.abs(p).sum(dim=1)
+                        mask[name] = torch.where(sum == 0, torch.zeros_like(sum), torch.ones_like(sum))
+                    elif isinstance(mo, nn.modules.Conv2d):
+                        sum = torch.abs(p).sum(dim=(1, 2, 3))
+                        mask[name] = torch.where(sum == 0, torch.zeros_like(sum), torch.ones_like(sum))
+                    else:
+                        mask[name] = torch.where(p == 0, torch.zeros_like(p), torch.ones_like(p))
                 else:
                     mask[name] = torch.where(p == 0, torch.zeros_like(p), torch.ones_like(p))
-    
+
     return mask
 
 
@@ -107,7 +146,7 @@ def get_mask_par(model, layers):
             for n_p, p in mo.named_parameters():
                 name = "{}.{}".format(n_m, n_p)
                 mask[name] = torch.where(p == 0, torch.zeros_like(p), torch.ones_like(p))
-    
+
     return mask
 
 
@@ -122,8 +161,45 @@ def magnitude_threshold(model, layers, T):
     for n_m, mo in model.named_modules():
         if isinstance(mo, layers):
             for n_p, p in mo.named_parameters():
-                zeros = torch.zeros_like(p)
-                
-                p.copy_(torch.where(torch.abs(p) < T, zeros, p))
-                
-                del zeros
+                p.copy_(torch.where(torch.abs(p) < T, torch.zeros_like(p), p))
+
+
+@torch.no_grad()
+def sensitivity_threshold(model, layers, T, sensitivity, layer_name):
+    """
+    Performs magnitude thresholding on a network, all the elements of the tensor below a threshold are zeroed.
+    :param model: PyTorch model on which apply the thresholding, layer by layer.
+    :param layers: Tuple of layers on which apply the threshold procedure. e.g. (nn.modules.Conv2d, nn.modules.Linear)
+    :param T: Threhsold value.
+    """
+    for n_m, mo in model.named_modules():
+        if n_m == layer_name:
+            if isinstance(mo, layers):
+                s = sensitivity[n_m]
+                prune_mask = torch.where(s < T, torch.zeros_like(s), torch.ones_like(s))
+                for n_p, p in mo.named_parameters():
+
+                    if prune_mask.device != p.device:
+                        prune_mask = prune_mask.to(p.device)
+
+                    if "weight" in n_p:
+                        if isinstance(mo, nn.modules.Linear):
+                            p.copy_(torch.einsum(
+                                'ij,i->ij',
+                                p,
+                                prune_mask
+                            ))
+                        elif isinstance(mo, nn.modules.Conv2d):
+                            p.copy_(torch.einsum(
+                                'ijnm,i->ijnm',
+                                p,
+                                prune_mask
+                            ))
+                        else:
+                            p.copy_(torch.mul(p, prune_mask))
+
+                        # Bias
+                    else:
+                        p.copy_(torch.mul(p, prune_mask))
+
+                return prune_mask
