@@ -41,7 +41,7 @@ def get_arg_parser():
                         help="Percentage of training dataset to use as validation. Default = 0.1.")
     parser.add_argument("--data_dir", type=str, default="data",
                         help="Folder containing the dataset. Default = data.")
-    parser.add_argument("--train_batch_size", type=int, default=100,
+    parser.add_argument("--train_batch_sizte", type=int, default=100,
                         help="Batch size. Default = 100.")
     parser.add_argument("--test_batch_size", type=int, default=1000,
                         help="Batch size. Default = 100.")

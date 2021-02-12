@@ -236,3 +236,137 @@ class ResNet(nn.Module):
 
 def resnet32(option="A"):
     return ResNet(ResnetBlock, [5, 5, 5], option=option)
+
+
+"""
+ALEXNET CIFAR100
+"""
+
+
+class AlexNet(nn.Module):
+    def __init__(self, num_classes=100):
+        super(AlexNet, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(64, 192, kernel_size=3, padding=1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2)
+        )
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256 * 2 * 2, 4096, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes, bias=False),
+        )
+    
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), 256 * 2 * 2)
+        x = self.classifier(x)
+        return x
+
+
+"""
+VGG CIFAR10 2
+"""
+
+
+class VGG2L(nn.Module):
+    def __init__(self, classes=10):
+        super(VGG2L, self).__init__()
+        self.features = self._make_layers()
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(512, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(512, classes)
+        )
+    
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+    
+    @staticmethod
+    def _make_layers():
+        layers = []
+        layers += [nn.Conv2d(3, 64, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(64, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.3)]
+        
+        layers += [nn.Conv2d(64, 64, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(64, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]
+        
+        layers += [nn.Conv2d(64, 128, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(128, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.4)]
+        
+        layers += [nn.Conv2d(128, 128, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(128, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]
+        
+        layers += [nn.Conv2d(128, 256, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(256, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.4)]
+        
+        layers += [nn.Conv2d(256, 256, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(256, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.4)]
+        
+        layers += [nn.Conv2d(256, 256, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(256, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]
+        
+        layers += [nn.Conv2d(256, 512, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(512, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.4)]
+        
+        layers += [nn.Conv2d(512, 512, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(512, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.4)]
+        
+        layers += [nn.Conv2d(512, 512, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(512, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]
+        
+        layers += [nn.Conv2d(512, 512, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(512, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.4)]
+        
+        layers += [nn.Conv2d(512, 512, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(512, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.Dropout(0.4)]
+        
+        layers += [nn.Conv2d(512, 512, kernel_size=3, padding=1)]
+        layers += [nn.BatchNorm2d(512, eps=1e-3)]
+        layers += [nn.ReLU()]
+        layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]
+        return nn.Sequential(*layers)

@@ -1,8 +1,10 @@
 import os
 
 import torch
+from torch import nn
+
 from .dataloaders import get_dataloader
-from .architectures import LeNet300, LeNet5, resnet32
+from .architectures import LeNet300, LeNet5, resnet32, AlexNet, VGG2L
 from torch.optim import SGD
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import models as torchvision_models
@@ -57,12 +59,25 @@ def _load(model):
         return LeNet300()
     if model == "lenet5":
         return LeNet5()
+    if model == "alexnet":
+        return AlexNet()
+    if model == "vgg":
+        return VGG2L()
     if model == "resnet32":
         return resnet32("A")
     if model == "resnet18":
         return torchvision_models.resnet18(True)
     if model == "resnet101":
         return torchvision_models.resnet101(True)
+    if model == "isic-classification":
+        num_classes = 8
+        net = torchvision_models.vgg16(pretrained=False)
+        net.classifier = nn.Sequential(nn.Linear(512 * 7 * 7, 1024),
+                                       nn.ReLU(True),
+                                       nn.Linear(1024, 1024),
+                                       nn.ReLU(True),
+                                       nn.Linear(1024, num_classes))
+        return net
 
 
 def _get_pytorch_optimizer(args, model):

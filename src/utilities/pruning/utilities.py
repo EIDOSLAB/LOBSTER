@@ -30,8 +30,7 @@ def apply_mask_params(mask, tensor, tensor_key):
     :param tensor: Tensor on which apply the mask.
     :param tensor_key: Key at which the mask for the tensor is stored in the dictionary.
     """
-    for m in mask:
-        tensor.mul_(m[tensor_key])
+    tensor.mul_(mask[tensor_key])
 
 
 @torch.no_grad()

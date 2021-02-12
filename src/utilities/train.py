@@ -1,8 +1,10 @@
+import os
+
 import torch
 from torch import nn
 from tqdm import tqdm
 
-from config import LAYERS
+from config import LAYERS, LOGS_ROOT
 from utilities import get_dataloaders, log_statistics, print_data
 from .evaluation import test_model, architecture_stat
 from .pruning import get_mask_par
@@ -46,6 +48,8 @@ def train_model_epoch_pruning(args, model, train_loader, valid_loader, test_load
         # Perform pruning step
         if pruning_step(args, TS, valid_performance, cross_valid, DLC):
             train_loader, valid_loader, test_loader = DLC.get_dataloaders()
+
+        torch.save(model.state_dict(), os.path.join(LOGS_ROOT, args.dataset, args.name, "models", "post_{}.pt".format(epoch)))
     
     print_data(args, cr_data)
 
@@ -128,7 +132,7 @@ def optimizer_steps(args, model, data, target, loss_function,
     if sensitivity_optimizer is not None:
         loss.backward()
         pytorch_optmizer.step()
-        sensitivity_optimizer.step([mask_params])
+        sensitivity_optimizer.step(mask_params)
     else:
         loss.backward()
         pytorch_optmizer.step()

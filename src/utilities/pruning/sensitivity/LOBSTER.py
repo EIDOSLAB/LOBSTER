@@ -19,7 +19,7 @@ class LOBSTER:
         self.eps = torch.tensor([1e-10])
 
     @torch.no_grad()
-    def step(self, mask_params, mask_neurons):
+    def step(self, mask_params):
         """
         Regularization step.
         :param masks: Dictionary of type `layer: tensor` containing, for each layer of the network a tensor
@@ -45,8 +45,6 @@ class LOBSTER:
 
                     if mask_params is not None:
                         utilities.apply_mask_params(mask_params, p, name)
-                    elif mask_neurons is not None:
-                        utilities.apply_mask_neurons(mask_neurons, p, name)
 
     @torch.enable_grad()
     def evaluate_sensitivity(self, dataloader, loss_function, device):
