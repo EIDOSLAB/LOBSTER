@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from .dataloaders import get_dataloader
-from .architectures import LeNet300, LeNet5, resnet32, AlexNet, VGG2L
+from .architectures import LeNet300, LeNet5, resnet32, AlexNet, VGG2L, UNet
 from torch.optim import SGD
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import models as torchvision_models
@@ -69,6 +69,8 @@ def _load(model):
         return torchvision_models.resnet18(True)
     if model == "resnet101":
         return torchvision_models.resnet101(True)
+    if model == "unet":
+        return UNet(3, 1)
     if model == "isic-classification":
         num_classes = 8
         net = torchvision_models.vgg16(pretrained=False)

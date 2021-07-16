@@ -13,7 +13,7 @@ class Scheduler(object):
     Identifies the highest threshold value that lead to a worsening in performance at most of a relative $twt$ amount.
     """
 
-    def __init__(self, model, layers, valid_loader, loss_function, twt, pwe, device):
+    def __init__(self, model, layers, valid_loader, loss_function, twt, pwe, device, task):
         """
         :param model: PyTorch model
         :param layers: Tuple of layers considered for the pruning procedure
@@ -32,6 +32,8 @@ class Scheduler(object):
         self.twt = twt
 
         self.device = device
+        
+        self.task = task
 
         self.a = -inf
         self.b = inf
@@ -131,11 +133,11 @@ class Scheduler(object):
         """
         mean_T = self._find_mean_T()
 
-        _, _, loss_base_model = test_model(self.model, self.loss_function, self.valid_loader, self.device)
+        _, _, loss_base_model = test_model(self.model, self.loss_function, self.valid_loader, self.device, self.task)
         self.bound = loss_base_model + (loss_base_model * self.twt)
 
         magnitude_threshold(self.model, self.layers, mean_T)
-        _, _, loss_threshold_model = test_model(self.model, self.loss_function, self.valid_loader, self.device)
+        _, _, loss_threshold_model = test_model(self.model, self.loss_function, self.valid_loader, self.device, self.task)
         self.model.load_state_dict(self.starting_state)
 
         if loss_threshold_model < self.bound:
@@ -161,7 +163,7 @@ class Scheduler(object):
             previous_T = self.center
 
             magnitude_threshold(self.model, self.layers, self.center)
-            _, _, loss_threshold_model = test_model(self.model, self.loss_function, self.valid_loader, self.device)
+            _, _, loss_threshold_model = test_model(self.model, self.loss_function, self.valid_loader, self.device, self.task)
             self.model.load_state_dict(self.starting_state)
 
             if loss_threshold_model <= self.bound:

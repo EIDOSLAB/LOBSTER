@@ -2,11 +2,13 @@ from .data_loader_cifar10 import get_data_loaders as data_loader_cifar10
 from .data_loader_cifar100 import get_data_loaders as data_loader_cifar100
 from .data_loader_fashionmnist import get_data_loaders as data_loader_fashion_mnist
 from .data_loader_imagenet import get_data_loaders as data_loader_imagenet
-from .data_loader_tiny_imagenet import get_data_loaders as data_loader_tiny_imagenet
-from .data_loader_isic import get_data_loaders_classification as data_loaders_isic_classification
+from .data_loader_isic import get_data_loaders_classification as data_loaders_isic_classification, \
+    get_data_loaders_segmentation as data_loaders_isic_segmentation
 from .data_loader_mnist import get_data_loaders as data_loader_mnist
+from .data_loader_tiny_imagenet import get_data_loaders as data_loader_tiny_imagenet
 
-AVAILABLE_DATASETS = ["mnist", "fashion-mnist", "cifar10", "cifar100", "imagenet", "isic-classification"]
+AVAILABLE_DATASETS = ["mnist", "fashion-mnist", "cifar10", "cifar100", "imagenet", "isic-classification",
+                      "isic-segmentation"]
 
 
 def get_dataloader(dataset, data_dir, train_batch_size, test_batch_size, valid_size, shuffle, num_workers, pin_memory,
@@ -41,9 +43,12 @@ def get_dataloader(dataset, data_dir, train_batch_size, test_batch_size, valid_s
                                     pin_memory, random_seed)
     elif dataset == "tiny-imagenet":
         return data_loader_tiny_imagenet(data_dir, train_batch_size, test_batch_size, valid_size, shuffle, num_workers,
-                                    pin_memory, random_seed)
+                                         pin_memory, random_seed)
     elif dataset == "isic-classification":
         return data_loaders_isic_classification(data_dir, train_batch_size, test_batch_size, shuffle, num_workers,
                                                 pin_memory)
+    elif dataset == "isic-segmentation":
+        return data_loaders_isic_segmentation(data_dir, train_batch_size, test_batch_size, shuffle, num_workers,
+                                              pin_memory)
     else:
         raise ValueError("Unsupported dataset, chose from {}".format(AVAILABLE_DATASETS))

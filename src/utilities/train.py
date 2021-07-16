@@ -2,28 +2,31 @@ import os
 
 import torch
 from torch import nn
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 
-from config import LAYERS, LOGS_ROOT
 from utilities import get_dataloaders, log_statistics, print_data
 from .evaluation import test_model, architecture_stat
+from .losses import SoftJaccardBCEWithLogitsLoss
 from .pruning import get_mask_par
 from .pruning.thresholding import threshold_scheduler
+from config import LAYERS, LOGS_ROOT
 
 
 def train_model_epoch_pruning(args, model, train_loader, valid_loader, test_loader, pytorch_optmizer,
-                              sensitivity_optmizer):
+                              sensitivity_optmizer, tb_writer):
     device, loss_function, cross_valid, \
     top_cr, top_acc, cr_data, \
-    epochs_count, high_lr, low_lr, current_lr, DLC = init_train(args, train_loader, valid_loader, test_loader)
+    epochs_count, high_lr, low_lr, current_lr, DLC, task = init_train(args, train_loader, valid_loader, test_loader)
     
     get_and_save_statistics(args, "INIT", model, loss_function,
                             train_loader, valid_loader, test_loader,
                             pytorch_optmizer, top_cr, top_acc,
-                            cr_data, device)
+                            cr_data, device, task, tb_writer)
     
     # Get threshold scheduler
-    TS = threshold_scheduler(model, LAYERS, valid_loader, loss_function, args.twt, args.pwe, device)
+    TS = threshold_scheduler(model, LAYERS, valid_loader, loss_function, args.twt, args.pwe, device, task)
+    lr_scheduler = ReduceLROnPlateau(pytorch_optmizer, threshold=0, cooldown=50)
     
     # Epochs
     for epoch in range(args.epochs):
@@ -43,30 +46,30 @@ def train_model_epoch_pruning(args, model, train_loader, valid_loader, test_load
         valid_performance, top_cr, top_acc, cr_data = get_and_save_statistics(args, epoch, model, loss_function,
                                                                               train_loader, valid_loader, test_loader,
                                                                               pytorch_optmizer, top_cr, top_acc,
-                                                                              cr_data, device)
+                                                                              cr_data, device, task, tb_writer)
         
         # Perform pruning step
         if pruning_step(args, TS, valid_performance, cross_valid, DLC):
             train_loader, valid_loader, test_loader = DLC.get_dataloaders()
-
-        torch.save(model.state_dict(), os.path.join(LOGS_ROOT, args.dataset, args.name, "models", "post_{}.pt".format(epoch)))
+            
+        lr_scheduler.step(valid_performance[2])
     
     print_data(args, cr_data)
 
 
 def train_model_batch_pruning(args, model, train_loader, valid_loader, test_loader, pytorch_optmizer,
-                              sensitivity_optmizer):
+                              sensitivity_optmizer, tb_writer):
     device, loss_function, cross_valid, \
     top_cr, top_acc, cr_data, \
-    epochs_count, high_lr, low_lr, current_lr, DLC = init_train(args, train_loader, valid_loader, test_loader)
+    epochs_count, high_lr, low_lr, current_lr, DLC, task = init_train(args, train_loader, valid_loader, test_loader)
     
     get_and_save_statistics(args, "INIT", model, loss_function,
                             train_loader, valid_loader, test_loader,
                             pytorch_optmizer, top_cr, top_acc,
-                            cr_data, device)
+                            cr_data, device, task, tb_writer)
     
     # Get threshold scheduler
-    TS = threshold_scheduler(model, LAYERS, valid_loader, loss_function, args.twt, args.pwe, device)
+    TS = threshold_scheduler(model, LAYERS, valid_loader, loss_function, args.twt, args.pwe, device, task)
     prune_iter = len(train_loader) // args.prune_iter
     test_iter = len(train_loader) // args.test_iter
     
@@ -95,15 +98,15 @@ def train_model_batch_pruning(args, model, train_loader, valid_loader, test_load
                                                                                       train_loader, valid_loader,
                                                                                       test_loader,
                                                                                       pytorch_optmizer, top_cr, top_acc,
-                                                                                      cr_data, device)
+                                                                                      cr_data, device, task, tb_writer)
             
             # Perform pruning step
             if ((batch + 1) % prune_iter) == 0:
                 
                 # Evaluate model performance for pruning purposes only if this batch is not already a 'test_iter'
                 if ((batch + 1) % test_iter) != 0:
-                    valid_performance = test_model(model, loss_function, valid_loader, device,
-                                                   "Evaluating model on validation set")
+                    valid_performance = test_model(model, loss_function, valid_loader, device, task,
+                                                   desc="Evaluating model on validation set")
                 
                 if pruning_step(args, TS, valid_performance, cross_valid, DLC):
                     train_loader, valid_loader, test_loader = DLC.get_dataloaders()
@@ -143,17 +146,18 @@ def optimizer_steps(args, model, data, target, loss_function,
 
 def get_and_save_statistics(args, epoch, model, loss_function,
                             train_loader, valid_loader, test_loader, pytorch_optmizer,
-                            top_cr, top_acc, cr_data, device):
+                            top_cr, top_acc, cr_data, device, task, tb_writer):
     pruning_stat = architecture_stat(model)
     
-    train_performance = test_model(model, loss_function, train_loader, device, "Evaluating model on training set")
-    valid_performance = test_model(model, loss_function, valid_loader, device, "Evaluating model on validation set")
-    test_performance = test_model(model, loss_function, test_loader, device, "Evaluating model on test set")
+    train_performance = test_model(model, loss_function, train_loader, device, task, desc="Evaluating model on training set")
+    valid_performance = test_model(model, loss_function, valid_loader, device, task,
+                                   desc="Evaluating model on validation set")
+    test_performance = test_model(model, loss_function, test_loader, device, task, desc="Evaluating model on test set")
     
     top_cr, top_acc, cr_data = log_statistics(args, epoch, model, pruning_stat, train_performance,
                                               valid_performance,
                                               test_performance, pytorch_optmizer.param_groups[0]['lr'], top_cr,
-                                              top_acc, cr_data)
+                                              top_acc, cr_data, tb_writer, task)
     
     return valid_performance, top_cr, top_acc, cr_data
 
@@ -199,7 +203,9 @@ def get_masks(args, model):
 
 def init_train(args, train_loader, valid_loader, test_loader):
     device = torch.device(args.device)
-    loss_function = nn.CrossEntropyLoss().to(device)
+    
+    task = "segmentation" if args.dataset in ["isic-segmentation"] else "classification"
+    loss_function = SoftJaccardBCEWithLogitsLoss(8) if task == "segmentation" else nn.CrossEntropyLoss()
     cross_valid = args.cross_valid
     top_cr = 1
     top_acc = 0
@@ -213,7 +219,7 @@ def init_train(args, train_loader, valid_loader, test_loader):
     DLC = DataLoaderContainer()
     DLC.set_dataloaders(train_loader, valid_loader, test_loader)
     
-    return device, loss_function, cross_valid, top_cr, top_acc, cr_data, epochs_count, high_lr, low_lr, current_lr, DLC
+    return device, loss_function, cross_valid, top_cr, top_acc, cr_data, epochs_count, high_lr, low_lr, current_lr, DLC, task
 
 
 def apply_masks(model, masks):

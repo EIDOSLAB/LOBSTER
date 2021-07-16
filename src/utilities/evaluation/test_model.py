@@ -1,4 +1,5 @@
 import torch
+from torch.cuda.amp import autocast
 from tqdm import tqdm
 
 
@@ -48,8 +49,25 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 
+def evaluate_jaccard(outputs, targets):
+    eps = 1e-15
+    jaccard_targets = (targets == 1).float()
+    jaccard_outputs = torch.sigmoid(outputs)
+
+    intersection = (jaccard_outputs * jaccard_targets).sum()
+    union = jaccard_outputs.sum() + jaccard_targets.sum()
+
+    jaccard = (intersection + eps) / (union - intersection + eps)
+
+    return jaccard
+
+
+def evaluate_dice(jaccard):
+    return 2 * jaccard / (1 + jaccard)
+
+
 @torch.no_grad()
-def test_model(model, loss_function, dataloader, device, desc=None):
+def test_model(model, loss_function, dataloader, device, task, amp=False, desc=None):
     """
     Evaluates PyTorch model performance.
     :param model: PyTorch model to evaluate.
@@ -59,12 +77,12 @@ def test_model(model, loss_function, dataloader, device, desc=None):
     :return: Top-1 accuracy, Top-5 accuracy and Loss.
     """
     losses = AverageMeter('Loss')
-    top1 = AverageMeter('@1Accuracy')
-    top5 = AverageMeter('@5Accuracy')
-
-    model.eval()
+    measure_1 = AverageMeter('@1Accuracy')
+    measure_2 = AverageMeter('@5Accuracy')
 
     if dataloader is not None:
+        model.eval()
+
         if desc is not None:
             pbar = tqdm(dataloader, total=len(dataloader))
             pbar.set_description(desc)
@@ -74,11 +92,27 @@ def test_model(model, loss_function, dataloader, device, desc=None):
         for data, target in pbar:
             data = data.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
-            output = model(data)
-            loss = loss_function(output, target)
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            losses.update(loss.item(), data.size(0))
-            top1.update(acc1[0], data.size(0))
-            top5.update(acc5[0], data.size(0))
 
-    return top1.avg, top5.avg, losses.avg
+            if amp:
+                with autocast():
+                    output = model(data)
+                    loss = loss_function(output, target)
+            else:
+                output = model(data)
+                loss = loss_function(output, target)
+
+            losses.update(loss.item(), data.size(0))
+
+            if task == "classification":
+                acc1, acc5 = accuracy(output, target, topk=(1, 5))
+                measure_1.update(acc1[0], data.size(0))
+                measure_2.update(acc5[0], data.size(0))
+            elif task == "segmentation":
+                jaccard = evaluate_jaccard(output, target)
+                dice = evaluate_dice(jaccard.item())
+                measure_1.update(jaccard, data.size(0))
+                measure_2.update(dice, data.size(0))
+
+        model.train()
+
+    return measure_1.avg, measure_2.avg, losses.avg

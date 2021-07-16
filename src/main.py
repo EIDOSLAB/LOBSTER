@@ -27,15 +27,15 @@ def main(args):
     pytorch_optmizer, sensitivity_optmizer = get_optimizers(args, model)
     
     # SummaryWriter
-    get_tb_writer(args)
+    tb_writer = get_tb_writer(args)
     
     # Train the model
     if args.batch_pruning:
         train_model_batch_pruning(args, model, train_loader, valid_loader, test_loader, pytorch_optmizer,
-                                  sensitivity_optmizer)
+                                  sensitivity_optmizer, tb_writer)
     else:
         train_model_epoch_pruning(args, model, train_loader, valid_loader, test_loader, pytorch_optmizer,
-                                  sensitivity_optmizer)
+                                  sensitivity_optmizer, tb_writer)
     
     torch.save(model.state_dict(), os.path.join(LOGS_ROOT, args.dataset, args.name, "models", "end.pt"))
 
